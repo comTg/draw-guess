@@ -1,0 +1,47 @@
+{
+  "name": "draw-guess",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "无服务器双人联机你画我猜 (React + Capacitor)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test:signaling": "node --experimental-strip-types scripts/test-signaling.ts",
+    "test:webrtc": "tsx scripts/test-webrtc.ts",
+    "test:draw": "tsx scripts/test-draw-sync.ts",
+    "test:game": "tsx scripts/test-game-engine.ts",
+    "test": "tsx scripts/test-draw-sync.ts && tsx scripts/test-game-engine.ts && node --experimental-strip-types scripts/test-signaling.ts"
+  },
+  "dependencies": {
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.11.17",
+    "howler": "^2.2.4",
+    "lucide-react": "^0.460.0",
+    "nanoid": "^5.0.9",
+    "pako": "^2.1.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.12",
+    "@types/pako": "^2.0.3",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "node-datachannel": "^0.32.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.22.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

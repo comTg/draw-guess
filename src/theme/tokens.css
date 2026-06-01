@@ -1,0 +1,83 @@
+/* ============================================================
+   设计 Token —— 浅色 / 深色 / 皮肤
+   颜色见《方案文档.md》§6.2；通过 documentElement 的
+   data-theme（light|dark）与 data-skin（grape|ocean）切换。
+   ============================================================ */
+
+:root {
+  /* —— 浅色 · 葡萄紫(默认皮肤) —— */
+  --bg: #faf7ff;
+  --surface: #ffffff;
+  --surface-2: #f2eefc;
+  --primary: #6c5ce7;
+  --primary-press: #5847d6;
+  --secondary: #ff6b9d;
+  --accent: #00c2a8;
+  --warning: #ffb020;
+  --danger: #ff5a5a;
+  --text: #2a2350;
+  --text-muted: #6b6694;
+  --border: #e6e0f7;
+
+  /* 黏土双阴影：外投影 + 内高光 */
+  --shadow-clay: 6px 6px 16px rgba(108, 92, 231, 0.18),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.7);
+  --shadow-clay-press: 3px 3px 8px rgba(108, 92, 231, 0.16),
+    inset 1px 1px 3px rgba(255, 255, 255, 0.55);
+
+  /* z-index 层级 */
+  --z-overlay: 10;
+  --z-drawer: 20;
+  --z-modal: 30;
+  --z-toast: 50;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: #161427;
+  --surface: #211e38;
+  --surface-2: #2b2750;
+  --primary: #8b7cff;
+  --primary-press: #7a6bf0;
+  --secondary: #ff85ae;
+  --accent: #2dd4bf;
+  --warning: #ffc247;
+  --danger: #ff7a7a;
+  --text: #ece9ff;
+  --text-muted: #a39fc9;
+  --border: #332e57;
+
+  --shadow-clay: 5px 5px 14px rgba(0, 0, 0, 0.45),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.06);
+  --shadow-clay-press: 2px 2px 8px rgba(0, 0, 0, 0.4),
+    inset 1px 1px 3px rgba(255, 255, 255, 0.05);
+
+  color-scheme: dark;
+}
+
+/* —— 皮肤：海洋（覆盖品牌色系，浅/深各一组） —— */
+:root[data-skin='ocean'] {
+  --primary: #2e9bff;
+  --primary-press: #1e84e6;
+  --secondary: #22d3ee;
+  --accent: #34d399;
+  --bg: #f3faff;
+  --surface-2: #e6f3fb;
+  --border: #d4e9f5;
+  --text: #123047;
+  --text-muted: #4a6b80;
+}
+
+:root[data-theme='dark'][data-skin='ocean'] {
+  --primary: #4fb0ff;
+  --primary-press: #2e9bff;
+  --secondary: #3ddcf0;
+  --accent: #41e0a8;
+  --bg: #0f1b27;
+  --surface: #16273a;
+  --surface-2: #1e3350;
+  --border: #29445e;
+  --text: #e6f3ff;
+  --text-muted: #93b4cc;
+}

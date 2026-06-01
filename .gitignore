@@ -1,0 +1,17 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Capacitor / Android (M5 生成)
+android/app/build
+android/build
+android/.gradle
+android/local.properties
+android/app/release
+*.keystore
+*.apk
+*.aab
