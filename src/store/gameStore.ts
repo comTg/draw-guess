@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid';
 import type { Stroke, Tool, PlayerId, PlayerInfo, GameStatus, ChatItem } from '../types';
 import type { Msg } from '../net/protocol';
 import { WIDTHS } from '../lib/canvasDraw';
+import { play } from '../lib/sound';
+import { haptic } from '../lib/haptics';
 
 export type MaskCell = string | null; // null=未揭示
 
@@ -11,6 +13,7 @@ interface GameState {
   strokes: Stroke[];
   active: Record<string, Stroke>;
   rev: number;
+  epoch: number; // 画布整体替换计数（清空/全量恢复时自增，触发画布重建）
   tool: Tool;
   color: string;
   width: number;
@@ -42,6 +45,9 @@ interface GameState {
   correctWord: string | null; // 回合结算展示
   lastDelta: Record<PlayerId, number>;
   winner: PlayerId | 'tie' | null;
+  flying: { key: string; emoji: number; from: PlayerId }[]; // 飘屏表情（短暂）
+  flyEmoji: (emoji: number, from: PlayerId) => void;
+  removeFly: (key: string) => void;
 
   initGame: (p: {
     meId: PlayerId;
@@ -62,6 +68,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   strokes: [],
   active: {},
   rev: 0,
+  epoch: 0,
   tool: 'pen',
   color: '#1F2937',
   width: WIDTHS[1],
@@ -142,6 +149,11 @@ export const useGameStore = create<GameState>((set, get) => ({
   correctWord: null,
   lastDelta: {},
   winner: null,
+  flying: [],
+
+  flyEmoji: (emoji, from) =>
+    set((st) => ({ flying: [...st.flying, { key: nanoid(6), emoji, from }].slice(-8) })),
+  removeFly: (key) => set((st) => ({ flying: st.flying.filter((f) => f.key !== key) })),
 
   initGame: ({ meId, players, totalRounds, drawSeconds }) =>
     set({
@@ -196,9 +208,14 @@ export const useGameStore = create<GameState>((set, get) => ({
           ...emptyBoard(),
           rev: st.rev + 1,
         });
+        if (m.word) get().setLocalWord(m.word); // 画手（含自动选词）据此获知词
         break;
       case 'timer':
         set({ remaining: m.remaining });
+        if (m.remaining > 0 && m.remaining <= 10) {
+          play('tick');
+          haptic.tick();
+        }
         break;
       case 'hint':
         set((s) => {
@@ -215,6 +232,10 @@ export const useGameStore = create<GameState>((set, get) => ({
           text: m.text,
           kind: m.correct ? 'correct' : m.close ? 'close' : 'guess',
         });
+        if (m.correct) {
+          play('correct');
+          haptic.correct();
+        }
         break;
       }
       case 'round_end':
@@ -225,10 +246,37 @@ export const useGameStore = create<GameState>((set, get) => ({
           lastDelta: m.deltaScores,
         });
         st.pushChat({ from: 'sys', name: '系统', text: `答案是「${m.correctWord}」`, kind: 'system' });
+        play('roundEnd');
+        haptic.end();
         break;
       case 'game_end':
         set({ status: 'gameOver', scores: m.totals, winner: m.winner });
+        play(m.winner === st.meId ? 'win' : 'lose');
+        haptic.win();
         break;
+      case 'state_full': {
+        const s = m.snapshot;
+        set({
+          status: s.status,
+          round: s.round,
+          totalRounds: s.totalRounds,
+          drawSeconds: s.drawSeconds,
+          drawerId: s.drawerId,
+          scores: s.scores,
+          players: s.players,
+          remaining: s.remaining,
+          mask: s.mask,
+          category: s.category,
+          correctWord: s.correctWord,
+          winner: s.winner,
+          word: s.word ?? null,
+          strokes: s.strokes,
+          active: {},
+          rev: st.rev + 1,
+          epoch: st.epoch + 1,
+        });
+        break;
+      }
       default:
         break;
     }

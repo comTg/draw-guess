@@ -1,4 +1,4 @@
-import type { Pt, Tool, PlayerId, Difficulty } from '../types';
+import type { Pt, Tool, PlayerId, Difficulty, Stroke, GameStatus, PlayerInfo } from '../types';
 
 /** 协议版本，握手时校验，不一致则提示升级。 */
 export const PROTOCOL_VERSION = 1;
@@ -8,18 +8,22 @@ export const HOST_ID: PlayerId = 'H';
 export const GUEST_ID: PlayerId = 'G';
 export const otherId = (id: PlayerId): PlayerId => (id === HOST_ID ? GUEST_ID : HOST_ID);
 
-/** 断线重连用的全量快照（M3 细化字段，这里先放宽松定义）。 */
+/** 断线重连用的全量快照（房主 → 访客）。 */
 export interface GameSnapshot {
-  status: string;
+  status: GameStatus;
   round: number;
   totalRounds: number;
+  drawSeconds: number;
   drawerId: PlayerId;
   scores: Record<PlayerId, number>;
+  players: Record<PlayerId, PlayerInfo>;
   remaining: number;
-  word?: string | null;
-  revealed?: { index: number; ch: string }[];
-  strokes?: unknown[];
-  [k: string]: unknown;
+  mask: (string | null)[];
+  category: string;
+  strokes: Stroke[];
+  correctWord: string | null;
+  winner: PlayerId | 'tie' | null;
+  word?: string | null; // 仅当访客是画手时下发
 }
 
 export type Msg =
@@ -32,7 +36,7 @@ export type Msg =
   // —— 游戏流程（房主权威，广播给访客）——
   | { t: 'game_config'; rounds: number; drawSeconds: number; difficulty: Difficulty }
   | { t: 'round_start'; round: number; drawerId: PlayerId; wordChoices?: string[] }
-  | { t: 'word_selected'; wordLen: number; category: string; seconds: number }
+  | { t: 'word_selected'; wordLen: number; category: string; seconds: number; word?: string }
   | { t: 'timer'; remaining: number }
   | { t: 'hint'; revealed: { index: number; ch: string }[] }
   | { t: 'guess_result'; playerId: PlayerId; correct: boolean; close?: boolean; text: string }
@@ -52,6 +56,7 @@ export type Msg =
   | { t: 'emoji'; id: number }
   | { t: 'ready' }
   | { t: 'giveup' }
+  | { t: 'hint_req' }
 
   // —— 绘画同步（画手→猜手）——
   | { t: 'stroke_start'; id: string; color: string; width: number; tool: Tool; p: Pt }

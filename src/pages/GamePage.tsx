@@ -1,18 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
-import { Loader2, Trophy, Flag } from 'lucide-react';
+import { Loader2, Trophy, Flag, Lightbulb } from 'lucide-react';
 import { Button, Card, Screen, TopBar } from '../components/ui';
 import { Avatar } from '../components/Avatar';
 import { DrawCanvas } from '../components/DrawCanvas';
 import { Toolbar } from '../components/Toolbar';
 import { ScoreBar, CountdownBar, WordMask } from '../components/game/Hud';
-import { ChatPanel, GuessInput } from '../components/game/Chat';
+import { ChatPanel, GuessInput, ChatInput } from '../components/game/Chat';
+import { EmojiBar, EmojiLayer } from '../components/game/Emoji';
+import { ReconnectOverlay } from '../components/game/ReconnectOverlay';
 import { useGameStore } from '../store/gameStore';
 import { useConnStore, setMessageHandler } from '../store/connStore';
 import { useUiStore } from '../store/uiStore';
 import { useNavStore } from '../store/navStore';
 import { otherId, HOST_ID, GUEST_ID } from '../net/protocol';
-import { chooseWord, pressReady, giveUp, handleMessage, resetEngine } from '../game/engine';
+import {
+  chooseWord,
+  pressReady,
+  giveUp,
+  giveHint,
+  handleMessage,
+  hostResync,
+  resetEngine,
+} from '../game/engine';
 
 const DIFF_LABEL: Record<string, string> = { easy: '简单', normal: '普通', hard: '困难' };
 
@@ -20,12 +30,23 @@ export function GamePage() {
   const status = useGameStore((s) => s.status);
   const meId = useGameStore((s) => s.meId);
   const drawerId = useGameStore((s) => s.drawerId);
-  const connPhase = useConnStore((s) => s.phase);
+  const link = useConnStore((s) => s.link);
   const leave = useConnStore((s) => s.leave);
   const go = useNavStore((s) => s.go);
   const [waiting, setWaiting] = useState(false);
 
   const amDrawer = meId === drawerId;
+
+  // 重连成功后，房主把全量状态同步给访客
+  const prevLink = useRef(link);
+  useEffect(() => {
+    if (prevLink.current === 'reconnecting' && link === 'online') {
+      if (useConnStore.getState().role === 'host' && useGameStore.getState().status !== 'lobby') {
+        hostResync();
+      }
+    }
+    prevLink.current = link;
+  }, [link]);
 
   // 初始化对局 + 接管消息
   useEffect(() => {
@@ -77,12 +98,9 @@ export function GamePage() {
 
   return (
     <Screen>
+      <EmojiLayer />
+      {link === 'reconnecting' && <ReconnectOverlay onHome={back} />}
       <TopBar title="你画我猜" onBack={back} />
-      {connPhase !== 'connected' && (
-        <Card className="!border-danger text-danger text-sm mb-3">
-          连接已断开，请返回首页重新连接。
-        </Card>
-      )}
 
       {status === 'lobby' && <Lobby waiting={waiting} onReady={ready} />}
       {status === 'wordpick' && <WordPick amDrawer={amDrawer} />}
@@ -176,13 +194,26 @@ function Drawing({
   onClear: () => void;
 }) {
   const word = useGameStore((s) => s.word);
+  const mask = useGameStore((s) => s.mask);
+  const revealedCount = mask.filter((c) => c != null).length;
+  const canHint = revealedCount < Math.floor(mask.length / 2);
+
   return (
     <div className="flex flex-col gap-3 pb-4">
       <ScoreBar />
       <CountdownBar />
       {amDrawer ? (
-        <div className="text-center font-head text-lg">
-          你画：<span className="text-primary">{word}</span>
+        <div className="flex items-center justify-center gap-3">
+          <span className="font-head text-lg">
+            你画：<span className="text-primary">{word}</span>
+          </span>
+          <button
+            onClick={giveHint}
+            disabled={!canHint}
+            className="clay-btn clay-btn--ghost !min-h-[40px] !px-3 text-sm disabled:opacity-40"
+          >
+            <Lightbulb size={16} /> 提示
+          </button>
         </div>
       ) : (
         <WordMask />
@@ -192,22 +223,21 @@ function Drawing({
         <DrawCanvas editable={amDrawer} className="absolute inset-0" />
       </div>
 
-      {amDrawer ? (
-        <>
-          <Toolbar onUndo={onUndo} onClear={onClear} />
+      {amDrawer && <Toolbar onUndo={onUndo} onClear={onClear} />}
+      <ChatPanel className="h-20" />
+      {amDrawer ? <ChatInput /> : <GuessInput />}
+
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <EmojiBar />
+        {amDrawer && (
           <button
             onClick={giveUp}
-            className="clay-btn clay-btn--ghost text-danger self-center !min-h-[44px] !px-5"
+            className="clay-btn clay-btn--ghost text-danger !min-h-[44px] !px-4 shrink-0"
           >
-            <Flag size={18} /> 放弃本回合
+            <Flag size={16} /> 放弃
           </button>
-        </>
-      ) : (
-        <>
-          <ChatPanel className="h-24" />
-          <GuessInput />
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

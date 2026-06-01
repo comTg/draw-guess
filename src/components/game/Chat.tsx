@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { Send } from 'lucide-react';
 import { Input } from '../ui';
 import { useGameStore } from '../../store/gameStore';
-import { submitGuess } from '../../game/engine';
+import { submitGuess, sendChat } from '../../game/engine';
 import type { ChatItem } from '../../types';
 
 function Bubble({ item }: { item: ChatItem }) {
@@ -44,20 +44,25 @@ export function ChatPanel({ className }: { className?: string }) {
   );
 }
 
-export function GuessInput({ disabled }: { disabled?: boolean }) {
+function InputRow({
+  placeholder,
+  onSend,
+}: {
+  placeholder: string;
+  onSend: (t: string) => void;
+}) {
   const [v, setV] = useState('');
   const submit = () => {
     const t = v.trim();
     if (!t) return;
-    submitGuess(t);
+    onSend(t);
     setV('');
   };
   return (
     <div className="flex gap-2">
       <Input
         value={v}
-        disabled={disabled}
-        placeholder={disabled ? '等待开始…' : '输入你的猜测…'}
+        placeholder={placeholder}
         maxLength={20}
         onChange={(e) => setV(e.target.value)}
         onKeyDown={(e) => {
@@ -67,11 +72,20 @@ export function GuessInput({ disabled }: { disabled?: boolean }) {
       <button
         aria-label="发送"
         onClick={submit}
-        disabled={disabled}
         className="clay-btn clay-btn--primary !min-w-[52px] !px-4"
       >
         <Send size={20} />
       </button>
     </div>
   );
+}
+
+/** 猜手：输入即猜词（计分）。 */
+export function GuessInput() {
+  return <InputRow placeholder="输入你的猜测…" onSend={submitGuess} />;
+}
+
+/** 画手：纯聊天（不计分、不能透题）。 */
+export function ChatInput() {
+  return <InputRow placeholder="和对方说点什么…" onSend={sendChat} />;
 }

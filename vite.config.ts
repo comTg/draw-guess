@@ -7,4 +7,14 @@ export default defineConfig({
   server: { host: true, port: 5173 },
   // 相对路径，便于 Capacitor 套壳后从 file:// 或自定义 scheme 加载资源。
   base: './',
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+        },
+      },
+    },
+  },
 });

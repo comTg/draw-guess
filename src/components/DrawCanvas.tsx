@@ -24,11 +24,13 @@ export function DrawCanvas({ editable, className }: Props) {
   // 渲染相关 refs（不触发 React 重渲染）
   const committedRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLCanvasElement | null>(null);
-  const dataRef = useRef<{ strokes: Stroke[]; active: Record<string, Stroke> }>({
+  const dataRef = useRef<{ strokes: Stroke[]; active: Record<string, Stroke>; epoch: number }>({
     strokes: [],
     active: {},
+    epoch: 0,
   });
   const bakedRef = useRef(0);
+  const epochRef = useRef(0);
   const dirtyRef = useRef(true);
   const sizeRef = useRef({ w: 0, h: 0 });
 
@@ -60,9 +62,9 @@ export function DrawCanvas({ editable, className }: Props) {
 
     // 初始化数据并订阅 store 变更
     const s0 = useGameStore.getState();
-    dataRef.current = { strokes: s0.strokes, active: s0.active };
+    dataRef.current = { strokes: s0.strokes, active: s0.active, epoch: s0.epoch };
     const unsub = useGameStore.subscribe((s) => {
-      dataRef.current = { strokes: s.strokes, active: s.active };
+      dataRef.current = { strokes: s.strokes, active: s.active, epoch: s.epoch };
       dirtyRef.current = true;
     });
 
@@ -80,7 +82,14 @@ export function DrawCanvas({ editable, className }: Props) {
       const octx = committedRef.current!.getContext('2d')!;
       const fctx = frameRef.current!.getContext('2d')!;
       const ctx = cv.getContext('2d')!;
-      const { strokes, active } = dataRef.current;
+      const { strokes, active, epoch } = dataRef.current;
+
+      // 0) 画布整体被替换（全量恢复）→ 清空 committed 并强制重建
+      if (epoch !== epochRef.current) {
+        epochRef.current = epoch;
+        octx.clearRect(0, 0, w, h);
+        bakedRef.current = 0;
+      }
 
       // 1) 把已完成笔画烘焙进 committed（增量；撤销/清空时重建）
       if (strokes.length < bakedRef.current) {

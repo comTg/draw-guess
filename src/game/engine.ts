@@ -1,7 +1,7 @@
 import { useGameStore } from '../store/gameStore';
 import { useConnStore } from '../store/connStore';
 import { useUiStore } from '../store/uiStore';
-import { HOST_ID, GUEST_ID, otherId, type Msg } from '../net/protocol';
+import { HOST_ID, GUEST_ID, otherId, type Msg, type GameSnapshot } from '../net/protocol';
 import { pickWords, categoryOf } from './words';
 import { isCorrect, isClose, scoreForGuess, DRAWER_BONUS } from './scoring';
 import type { PlayerId } from '../types';
@@ -9,12 +9,17 @@ import type { PlayerId } from '../types';
 // 主机权威引擎：计时、计分、回合切换只在房主侧运算，结果广播给访客。
 // 访客只发送输入（choose_word / guess / ready），由房主裁决。
 
+const PICK_SECONDS = 15;
+
 interface EngineState {
   candidates: string[];
   currentWord: string | null;
   used: Set<string>;
   ready: Record<PlayerId, boolean>;
   timer: ReturnType<typeof setInterval> | null;
+  pickTimer: ReturnType<typeof setTimeout> | null;
+  revealed: Set<number>;
+  maxHints: number;
 }
 
 const eng: EngineState = {
@@ -23,6 +28,9 @@ const eng: EngineState = {
   used: new Set(),
   ready: {},
   timer: null,
+  pickTimer: null,
+  revealed: new Set(),
+  maxHints: 0,
 };
 
 const gs = () => useGameStore.getState();
@@ -41,6 +49,13 @@ function clearTimer() {
   if (eng.timer !== null) {
     clearInterval(eng.timer);
     eng.timer = null;
+  }
+}
+
+function clearPickTimer() {
+  if (eng.pickTimer !== null) {
+    clearTimeout(eng.pickTimer);
+    eng.pickTimer = null;
   }
 }
 
@@ -63,17 +78,30 @@ function hostStartRound(n: number) {
     { t: 'round_start', round: n, drawerId, wordChoices: drawerId === HOST_ID ? eng.candidates : undefined },
     { t: 'round_start', round: n, drawerId, wordChoices: drawerId === GUEST_ID ? eng.candidates : undefined }
   );
+
+  // 选词限时：超时自动选第一个
+  clearPickTimer();
+  eng.pickTimer = setTimeout(() => {
+    if (!eng.currentWord) hostBeginDrawing(0);
+  }, PICK_SECONDS * 1000);
 }
 
 function hostBeginDrawing(index: number) {
-  const word = eng.candidates[index];
+  if (eng.currentWord) return; // 幂等：防止手动选词与超时自动选词重复触发
+  const word = eng.candidates[index] ?? eng.candidates[0];
   if (!word) return;
+  clearPickTimer();
   eng.currentWord = word;
   eng.used.add(word);
+  eng.revealed = new Set();
+  eng.maxHints = Math.floor([...word].length / 2);
 
-  if (gs().drawerId === HOST_ID) gs().setLocalWord(word); // 房主作画则本地持有词
+  const drawerIsGuest = gs().drawerId === GUEST_ID;
+  if (!drawerIsGuest) gs().setLocalWord(word); // 房主作画则本地持有词
   const seconds = gs().drawSeconds;
-  broadcast({ t: 'word_selected', wordLen: [...word].length, category: categoryOf(word), seconds });
+  const base = { t: 'word_selected' as const, wordLen: [...word].length, category: categoryOf(word), seconds };
+  // 仅在访客是画手时把词随 word_selected 发给访客（含自动选词场景）
+  broadcast(base, drawerIsGuest ? { ...base, word } : base);
   startTimer(seconds);
 }
 
@@ -85,10 +113,33 @@ function startTimer(seconds: number) {
     if (rem <= 0) {
       broadcast({ t: 'timer', remaining: 0 });
       hostEndRound(false);
-    } else {
-      broadcast({ t: 'timer', remaining: rem });
+      return;
     }
+    broadcast({ t: 'timer', remaining: rem });
+    maybeHint(seconds, rem);
   }, 1000);
+}
+
+/** 后半程逐步揭示字符（最多 floor(词长/2) 个）。 */
+function maybeHint(total: number, rem: number) {
+  if (eng.maxHints <= 0 || eng.revealed.size >= eng.maxHints) return;
+  const half = total / 2;
+  if (rem > half) return;
+  const step = half / (eng.maxHints + 1);
+  const due = Math.min(eng.maxHints, Math.floor((half - rem) / step));
+  while (eng.revealed.size < due) revealOneHint();
+}
+
+function revealOneHint() {
+  const word = eng.currentWord;
+  if (!word) return;
+  const chars = [...word];
+  if (eng.revealed.size >= Math.min(eng.maxHints || chars.length, chars.length)) return;
+  const candidates = chars.map((_, i) => i).filter((i) => !eng.revealed.has(i));
+  if (!candidates.length) return;
+  const idx = candidates[Math.floor(Math.random() * candidates.length)];
+  eng.revealed.add(idx);
+  broadcast({ t: 'hint', revealed: [{ index: idx, ch: chars[idx] }] });
 }
 
 function hostGuess(text: string, fromId: PlayerId) {
@@ -109,6 +160,7 @@ function hostGuess(text: string, fromId: PlayerId) {
 
 function hostEndRound(correct: boolean) {
   clearTimer();
+  clearPickTimer();
   const drawerId = gs().drawerId;
   const guesserId = otherId(drawerId);
   const scores = { ...gs().scores };
@@ -172,6 +224,9 @@ function handleClientMsg(m: Msg) {
     case 'giveup':
       hostEndRound(false);
       break;
+    case 'hint_req':
+      revealOneHint();
+      break;
     default:
       break;
   }
@@ -210,20 +265,79 @@ export function giveUp() {
   else send({ t: 'giveup' });
 }
 
-/** 统一入站消息处理：绘画→画布；其余按角色分流。 */
+/** 画手主动给一个提示（揭示一个字）。 */
+export function giveHint() {
+  if (role() === 'host') revealOneHint();
+  else send({ t: 'hint_req' });
+}
+
+/** 发送快捷表情（直连 P2P，不经裁判）。 */
+export function sendEmoji(emoji: number) {
+  const meId = gs().meId;
+  gs().flyEmoji(emoji, meId);
+  send({ t: 'emoji', id: emoji });
+}
+
+/** 画手发送文字聊天（直连 P2P）。 */
+export function sendChat(text: string) {
+  const t = text.trim();
+  if (!t) return;
+  const me = gs();
+  me.pushChat({ from: me.meId, name: me.players[me.meId]?.name ?? '我', text: t, kind: 'chat' });
+  send({ t: 'chat', text: t });
+}
+
+/** 统一入站消息处理：绘画→画布；社交(聊天/表情)直连双向；其余按角色分流。 */
 export function handleMessage(m: Msg) {
   if (DRAW_TYPES.has(m.t)) {
     gs().applyDraw(m);
+    return;
+  }
+  if (m.t === 'chat') {
+    const me = gs();
+    const fromId = otherId(me.meId);
+    me.pushChat({ from: fromId, name: me.players[fromId]?.name ?? '对方', text: m.text, kind: 'chat' });
+    return;
+  }
+  if (m.t === 'emoji') {
+    gs().flyEmoji(m.id, otherId(gs().meId));
     return;
   }
   if (role() === 'host') handleClientMsg(m);
   else gs().applyServerMsg(m);
 }
 
+/** 重连后房主把全量状态同步给访客。 */
+export function hostResync() {
+  if (role() !== 'host') return;
+  const g = gs();
+  const drawerIsGuest = g.drawerId === GUEST_ID;
+  const snapshot: GameSnapshot = {
+    status: g.status,
+    round: g.round,
+    totalRounds: g.totalRounds,
+    drawSeconds: g.drawSeconds,
+    drawerId: g.drawerId,
+    scores: g.scores,
+    players: g.players,
+    remaining: g.remaining,
+    mask: g.mask,
+    category: g.category,
+    strokes: g.strokes,
+    correctWord: g.correctWord,
+    winner: g.winner,
+    word: drawerIsGuest ? eng.currentWord ?? undefined : undefined,
+  };
+  send({ t: 'state_full', snapshot });
+}
+
 export function resetEngine() {
   clearTimer();
+  clearPickTimer();
   eng.candidates = [];
   eng.currentWord = null;
   eng.used.clear();
   eng.ready = {};
+  eng.revealed = new Set();
+  eng.maxHints = 0;
 }
