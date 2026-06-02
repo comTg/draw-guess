@@ -12,6 +12,8 @@
     "cap:sync": "vite build && cap sync android",
     "cap:open": "cap open android",
     "android:apk": "vite build && cap sync android && cd android && gradlew.bat assembleDebug",
+    "android:release": "vite build && cap sync android && cd android && gradlew.bat assembleRelease",
+    "android:release:install": "vite build && cap sync android && cd android && gradlew.bat assembleRelease && adb install -r app\\build\\outputs\\apk\\release\\app-release.apk",
     "test:signaling": "node --experimental-strip-types scripts/test-signaling.ts",
     "test:webrtc": "tsx scripts/test-webrtc.ts",
     "test:draw": "tsx scripts/test-draw-sync.ts",
